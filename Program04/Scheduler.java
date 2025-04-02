@@ -1,6 +1,5 @@
-
 import java.util.*;
-
+import java.util.ArrayList;
 // Source code
 public class Scheduler {
 	int timer;
