@@ -62,12 +62,12 @@ class RaceTwoThreads {
 
       // start the two threads, both in the same object
       // so they share one instance of its variable sum
-      Racer r = new Racer("Racer", M);
-      Thread[] threads = new Thread[numRacers];
+      Racer r = new Racer("Racer", M);              // create a thread function pobject
+      Thread[] threads = new Thread[numRacers];          // create an array of threads
       for (int i = 0; i < numRacers; i++)
-         threads[i] = new Thread(r, "RacerThread-" + i);
+         threads[i] = new Thread(r, "RacerThread-" + i); // create a racer thread
       for (int i = 0; i < numRacers; i++) {
-         threads[i].start();
+         threads[i].start();                             // start each thread
       }
       System.out.println("age()=" + Scheduler.age() +
             ", all Racer threads started");
@@ -75,7 +75,7 @@ class RaceTwoThreads {
       // wait for them to finish if not forced consecutive
       try {
          for (int i = 0; i < numRacers; i++) {
-            threads[i].join(); // synchronize threads using join()
+            threads[i].join();                           // synchronize threads using join()
          }
       } catch (InterruptedException e) {
          System.err.println("interrupted out of join");
