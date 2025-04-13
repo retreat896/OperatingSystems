@@ -8,6 +8,7 @@ exclusion using the "Arbitrator" class to manage access to a shared resource.
 Input: Command line arguments -M (number of computations) and -N (number of racers).
 Output: Displays the progress and results of each Racer thread.
 ---------------------------------------------------------------------*/
+import java.util.concurrent.Semaphore;
 class Racer extends Thread {
    /**
     * Represents a racing thread that performs computations in a controlled manner.
@@ -18,7 +19,7 @@ class Racer extends Thread {
    private int M = 0;              
    private static volatile long sum = 0;  
    private int id;
-   private Arbitrator arbitrator;
+   private Semaphore semaphore;
 
    /**
     * Constructor for creating a new Racer thread.
@@ -27,12 +28,11 @@ class Racer extends Thread {
     * @param id int - Unique identifier for this racer, used for arbitration
     * @param arbitrator Arbitrator - The arbitrator instance managing mutual exclusion
     */
-   public Racer(String name, int M, int id, Arbitrator arbitrator) {
+   public Racer(String name, int M, int id, Semaphore semaphore) {
       this.name = name;
       this.M = M;
       this.id = id;
-this.arbitrator = arbitrator;
-      this.arbitrator = arbitrator;
+      this.semaphore = semaphore;
       System.out.println("age()=" + Scheduler.age() + ", "
          + name + " is alive, M=" + M);
    }
@@ -64,16 +64,18 @@ this.arbitrator = arbitrator;
 		 + Thread.currentThread().getName());
 	  System.out.println("ID:" 
 		 + Thread.currentThread().getId());
+      try{
+         semaphore.acquire(id);
+      }catch(InterruptedException e){
+         System.out.println("Thread interrupted");
+      }
        
-      
       for (int m = 1; m <= M; m++)
       {
-         arbitrator.wantToEnterCS(id);
          sum = fn(sum, m);      
-         arbitrator.finishedInCS(id);
-
       }
-      
+      semaphore.release(id);
+
       System.out.println("age()=" + Scheduler.age() + ", "
          + name + " is done, sum = " + sum);
 	  System.out.println("\n");
@@ -124,13 +126,13 @@ class RaceManyThreads {
       );
 
       // Racer racerObject = new Racer("RacerObject", M);
-      arbitrator = new Arbitrator(numRacers);
+      Semaphore mutex = new Semaphore(numRacers);
 
       Racer[] racer = new Racer[numRacers];
       // Thread[] racer = new Thread[numRacers];
       for (int i = 0; i < numRacers; i++)
          // racer[i] = new Thread(racerObject, "RacerThread" + i);
-         racer[i] = new Racer("RacerThread" + i, M, i, arbitrator);
+         racer[i] = new Racer("RacerThread" + i, M, i, mutex);
       for (int i = 0; i < numRacers; i++) {
         // racer[i].start();
         racer[i].start();
