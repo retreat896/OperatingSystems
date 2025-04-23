@@ -1,0 +1,543 @@
+
+D:\Desktop\code\OperatingSystems\Program06>javac *.java 
+
+D:\Desktop\code\OperatingSystems\Program06>cat Bump.java Car.java Coordinator.java Rider.java 
+public class Bump extends Thread{
+    public static void main(String[] args) {
+        // 0. get user args from command line
+        int totalRiders = 10;
+        int totalCars = 5;
+        int maxBumpTime = 5;
+        int maxWanderTime = 10;
+        int totalTime = 40;
+
+        // use getOpt to get the command line args
+        GetOpt go = new GetOpt(args, "Ur:c:b:w:R:");
+        go.optErr = true;
+        int ch = -1;
+        boolean usagePrint = false;
+
+        while ((ch = go.getopt()) != go.optEOF) {
+            if ((char) ch == 'U')
+                usagePrint = true;
+            else if ((char) ch == 'r')
+                totalRiders = go.processArg(go.optArgGet(), totalRiders);
+            else if ((char) ch == 'c')
+                totalCars = go.processArg(go.optArgGet(), totalCars);
+            else if ((char) ch == 'b')
+                maxBumpTime = go.processArg(go.optArgGet(), maxBumpTime);
+            else if ((char) ch == 'w')
+                maxWanderTime = go.processArg(go.optArgGet(), maxWanderTime);
+            else if ((char) ch == 'R')
+                totalTime = go.processArg(go.optArgGet(), totalTime); // convert to ms
+            else
+                System.exit(1);
+        }
+        if (usagePrint) {
+            System.out.println("Usage: -r# -c# -b# -w# -R#");
+            System.out.println("  -r# = number of rider threads (default 10)");
+            System.out.println("  -c# = number of car threads (default 5)");
+            System.out.println("  -b# = max bump time in ms (default 1)");
+            System.out.println("  -w# = max wander time in seconds (default 10)");
+            System.out.println("  -R# = total time in seconds (default 40)");
+            System.out.println("  -u  = print usage");
+            System.exit(0);
+        }
+
+        // 0. print out the user args
+        System.out.printf("Bumper Cars: numRiders = %d, numCars = %d%n",
+                totalRiders, totalCars);
+        System.out.printf("timeBump = %d, timeWander = %d, runTime = %d%n",
+                maxBumpTime, maxWanderTime, totalTime);
+
+        // 1. Create coordinator object
+        Coordinator coord = new Coordinator(totalRiders, totalCars, maxBumpTime);
+
+        // 2. Create array of cars
+        Car[] cars = new Car[totalCars];
+
+        // 3. Create array of riders
+        Rider[] riders = new Rider[totalRiders];
+
+        // 4. Create the cars
+        for (int i = 0; i < cars.length; i++) {
+            cars[i] = new Car(i, coord);
+            System.out.println("Car " + i + " is alive");
+        }
+
+        // 5. Create the riders
+        for (int i = 0; i < riders.length; i++) {
+            riders[i] = new Rider(i, coord, maxWanderTime);
+            System.out.println("Rider " + i + " is alive");
+        }
+
+        // 6. Write "All Car & Rider threads started."
+        System.out.println("All Car & Rider threads started.");
+
+        // 7. nap for T-total seconds
+        SmallScheduler.nap(totalTime * 1000); // convert to ms
+
+        // 8. Write "Calling stopIts; wait 15 seconds; do mini-report"
+        System.out.println("Calling stopIts; wait 15 seconds; do mini-report");
+
+        // 9. Call the stopIt methods and wait 15 seconds.
+        for (Car car : cars) {
+            car.stopIt();
+        }
+        for (Rider rider : riders) {
+            rider.stopIt();
+        }
+        SmallScheduler.nap(15000);
+
+        // 10. Print mini-report
+        System.out.println("Number of times a car was ridden " + coord.findTotalRider() + ".");
+
+        // 11. System.exit( 0 );
+        System.exit(0);
+    }
+}class Car implements Runnable {
+    private Coordinator coord = null;
+    private int cid = -1; // Car id #
+    private boolean stop;
+
+    public Car(int id, Coordinator c) {
+        // ask if you don't know.
+        this.cid = id;
+        this.coord = c;
+        this.stop = false;
+        new Thread(this).start();
+    }
+
+    public void run() {
+        while (!stop) {
+            // 0. Write out the Car + id "is in line to be loaded."
+            System.out.println("age() = "+SmallScheduler.age()+", Car " + cid + " is in line to be loaded.");
+    
+            // 1. rid = coord.load(. . .) - car waits until loaded'
+            int rid = coord.load(cid);
+
+            // 2. get bumpingTime
+            int bump = coord.getBumpTime(); // in ms
+
+
+            // 3. bump (nap for bumpingTime) - bump on the floor
+            System.out.println("age() = "+SmallScheduler.age()+", Car " + cid + " with Rider "+ rid + " is bumping on the floor for " + bump + " ms");
+            SmallScheduler.nap(bump);
+
+
+            // 4. actually take a second to unload : nap 1000
+            SmallScheduler.nap(1000);
+
+            // 5. coord.unload(. . .) - car waits until loaded
+            coord.unload(rid);
+
+            // 6. write out Car + id + " has unloaded." (see sample output)
+            System.out.println("age() = "+SmallScheduler.age()+", Car " + cid + " has unloaded.");
+        }
+    }
+
+    public void stopIt() {
+        this.stop = true;
+    }
+}class Coordinator extends Thread {
+    private boolean[] rideBegin, rideOver;
+    private int car_riders;
+    private boolean finish_loading;
+    private int bump;
+    private int[] buffer;
+    private int in, out;
+    private int count;
+    private int size;
+    private int totalUnloaded;
+    
+
+    public Coordinator(int riders, int cars, int bumptime) {
+        // - initialize most data to zero
+        this.car_riders = riders;
+        this.bump = bumptime * 1000; // convert to ms
+
+        // - create buffer as an array of ints with size == cars
+        buffer = new int[cars];
+        size = cars;
+
+        // - create bool arrays, rideBegin and rideOver size == riders
+        rideBegin = new boolean[riders];
+        rideOver = new boolean[riders];
+
+        // - initialize bool arrays to all false.
+        for (int i = 0; i < riders; i++) {
+            rideBegin[i] = false;
+            rideOver[i] = false;
+        }
+    }
+
+    /* the following are public synchronized methods */
+    public synchronized void getInLine(int rid) {
+        // - put rid into the buffer
+        enter(rid);
+
+        // - set rideBegin[rid] to false
+        rideBegin[rid] = false;
+
+        // - wait while rideBegin[rid] is false
+        while (!rideBegin[rid]) {
+            try {
+                this.wait();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    public synchronized int load(int car_id) {
+        // - Get curRider from the buffer
+        int curRider = remove();
+
+        // - set rideBegin[curRider] to true
+        rideBegin[curRider] = true;
+
+        // - signal
+        notifyAll();
+
+        // - set finish_loading to false
+        finish_loading = false;
+
+        // - wait while finish_loadinwdg is false
+        while (!finish_loading) {
+            try {
+                this.wait();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        // - return curRider
+        return curRider;
+
+    }
+
+    public synchronized void takeAseat() {
+        // - set finish_loading to true
+        finish_loading = true;
+
+        // - signal
+        notifyAll();
+
+        // - increment car_riders
+        car_riders++;
+    }
+
+    public synchronized void takeAride(int rid) {
+        // - set rideOver[rid] to false
+        rideOver[rid] = false;
+
+        // - wait while rideOver[rid] is false
+        while (!rideOver[rid]) {
+            try {
+                this.wait();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+    }
+
+    public synchronized void unload(int rid) {
+        // - set rideOver[rid] to true
+        rideOver[rid] = true;
+
+        // - signal
+        notifyAll();
+
+        // - increment totalUnloaded
+        totalUnloaded++;
+
+    }
+
+    /*
+     * the following are public helper methods that are
+     * NOT synchronized
+     */
+    int getBumpTime() {
+        // -- returns amount of time a car bumps
+        return (int)(Math.random() * bump);
+    }
+
+    int findTotalRider() {
+    
+        return car_riders - rideBegin.length;
+    }
+
+
+
+
+
+
+
+
+    // BBuffer methods
+    // /** Creates a new instance of BBuffer 
+    //   * @param sizeOfBuffer represents the size of the buffer.
+    //   */
+    //   private BBuffer( int sizeOfBuffer  ) 
+    //   {
+    //      buffer = new int[ sizeOfBuffer ];
+    //      count = 0  ;
+    //      in = 0;
+    //      out = 0;
+    //      size = sizeOfBuffer;
+    //   }
+
+    /**
+     * Producer method.
+     * When the buffer(count) is full, it waits; then it deposits an id in
+     * the buffer and notifies if the count is at exactly one.
+     * 
+     * @param id - identifier of rider.
+     */
+    private synchronized void enter(int id) {
+        while (count == size) {
+            try {
+                this.wait();
+            } catch (InterruptedException e) {
+                System.out.println(" In enter" + e);
+            }
+        }
+        buffer[in] = id;
+        in = (in + 1) % size;
+        count++;
+        notifyAll();
+    }
+
+    /*
+     * Consumer method
+     * When the buffer is empty, it waits; then id removes an id from
+     * the buffer and notifies if the count is at exactly size - 1.
+     * 
+     * @return the next element in the buffer.
+     */
+    private synchronized int remove() {
+        int tempId;
+        while (count == 0) {
+            try {
+                this.wait();
+            } catch (InterruptedException e) {
+                System.out.println(" In getInLine" + e);
+            }
+        }
+        tempId = buffer[out];
+        out = (out + 1) % size;
+        count--;
+        notifyAll();
+        return tempId;
+    }
+
+}
+class Rider implements Runnable {
+    private Coordinator coord = null;
+    private int rid = -1; // Rider id #
+    private int maxWanderTime = -1;
+    private boolean stop;
+
+    public Rider(int id, Coordinator c, int maxWanderTime) // Ask if you don't know.
+    {
+        this.rid = id;
+        this.coord = c;
+        this.maxWanderTime = maxWanderTime * 1000; // convert to ms
+        this.stop = false;
+
+        new Thread(this).start();
+    }
+
+    public void run() {
+        while (!stop) {
+            // 0. Generate random wander - time & write out wandering message (see sample output)
+            int wanderTime = (int) (Math.random() * maxWanderTime);
+            System.out.println("age() = "+SmallScheduler.age()+", Rider " + rid + " is wandering the park for " + wanderTime + " ms");
+
+            // 1. nap - wander around the park
+            SmallScheduler.nap(wanderTime);
+
+            // 2. write out that Rider is joining the line. (see sample output)
+            System.out.println("age() = "+SmallScheduler.age()+", Rider " + rid + " is joining the line.");
+
+            // 3. coord.getInLine(. . .)
+            coord.getInLine(rid);
+
+            // 4. actually take a second to take a seat : nap 1000
+            SmallScheduler.nap(1000);
+
+            // 5. coord.takeAseat(. . .)
+            coord.takeAseat();
+
+            // 6. coord.takeAride(. . .)
+            coord.takeAride(rid);
+
+            // 7. write out that rider has finished riding. (see sample output)
+            System.out.println("age() = "+SmallScheduler.age()+", Rider " + rid + " has finished riding.");
+        }
+    }
+
+    public void stopIt() {
+        this.stop = true;
+    }
+}
+
+D:\Desktop\code\OperatingSystems\Program06>java Bump -U 
+Usage: -r# -c# -b# -w# -R#
+  -r# = number of rider threads (default 10)
+  -c# = number of car threads (default 5)
+  -b# = max bump time in ms (default 1)
+  -w# = max wander time in seconds (default 10)
+  -R# = total time in seconds (default 40)
+  -u  = print usage
+
+D:\Desktop\code\OperatingSystems\Program06>java Bump -r6 -c3 -b5 -w10 -R30  
+Bumper Cars: numRiders = 6, numCars = 3
+timeBump = 5, timeWander = 10, runTime = 30
+Car 0 is alive
+Car 1 is alive
+Car 2 is alive
+Rider 0 is alive
+Rider 1 is alive
+Rider 2 is alive
+Rider 3 is alive
+Rider 4 is alive
+Rider 5 is alive
+All Car & Rider threads started.
+age() = 0, Car 0 is in line to be loaded.
+age() = 3, Car 1 is in line to be loaded.
+age() = 3, Car 2 is in line to be loaded.
+age() = 4, Rider 3 is wandering the park for 705 ms
+age() = 4, Rider 5 is wandering the park for 4443 ms
+age() = 4, Rider 1 is wandering the park for 2381 ms
+age() = 4, Rider 2 is wandering the park for 494 ms
+age() = 4, Rider 4 is wandering the park for 6015 ms
+age() = 4, Rider 0 is wandering the park for 6450 ms
+age() = 506, Rider 2 is joining the line.
+age() = 718, Rider 3 is joining the line.
+age() = 1509, Car 1 with Rider 3 is bumping on the floor for 2813 ms
+age() = 1509, Car 0 with Rider 2 is bumping on the floor for 3372 ms
+age() = 2394, Rider 1 is joining the line.
+age() = 3394, Car 2 with Rider 1 is bumping on the floor for 1119 ms
+age() = 4454, Rider 5 is joining the line.
+age() = 5336, Car 1 has unloaded.
+age() = 5337, Car 1 is in line to be loaded.
+age() = 5337, Rider 3 has finished riding.
+age() = 5339, Rider 3 is wandering the park for 162 ms
+age() = 5501, Rider 3 is joining the line.
+age() = 5516, Rider 1 has finished riding.
+age() = 5516, Rider 1 is wandering the park for 3884 ms
+age() = 5516, Car 2 has unloaded.
+age() = 5516, Car 2 is in line to be loaded.
+age() = 5889, Rider 2 has finished riding.
+age() = 5889, Rider 2 is wandering the park for 4469 ms
+age() = 5889, Car 0 has unloaded.
+age() = 5889, Car 0 is in line to be loaded.
+age() = 6028, Rider 4 is joining the line.
+age() = 6339, Car 0 with Rider 4 is bumping on the floor for 3668 ms
+age() = 6339, Car 1 with Rider 5 is bumping on the floor for 3096 ms
+age() = 6339, Car 2 with Rider 3 is bumping on the floor for 913 ms
+age() = 6461, Rider 0 is joining the line.
+age() = 8253, Car 2 has unloaded.
+age() = 8253, Car 2 is in line to be loaded.
+age() = 8253, Rider 3 has finished riding.
+age() = 8253, Rider 3 is wandering the park for 7815 ms
+age() = 9254, Car 2 with Rider 0 is bumping on the floor for 654 ms
+age() = 9400, Rider 1 is joining the line.
+age() = 10360, Rider 2 is joining the line.
+age() = 10436, Car 1 has unloaded.
+age() = 10436, Rider 5 has finished riding.
+age() = 10436, Rider 5 is wandering the park for 4323 ms
+age() = 10436, Car 1 is in line to be loaded.
+age() = 10909, Rider 0 has finished riding.
+age() = 10909, Rider 0 is wandering the park for 6216 ms
+age() = 10909, Car 2 has unloaded.
+age() = 10909, Car 2 is in line to be loaded.
+age() = 11009, Rider 4 has finished riding.
+age() = 11009, Rider 4 is wandering the park for 1052 ms
+age() = 11009, Car 0 has unloaded.
+age() = 11009, Car 0 is in line to be loaded.
+age() = 11436, Car 2 with Rider 2 is bumping on the floor for 619 ms
+age() = 11436, Car 1 with Rider 1 is bumping on the floor for 3721 ms
+age() = 12062, Rider 4 is joining the line.
+age() = 13058, Rider 2 has finished riding.
+age() = 13058, Rider 2 is wandering the park for 5303 ms
+age() = 13058, Car 2 has unloaded.
+age() = 13058, Car 2 is in line to be loaded.
+age() = 13063, Car 0 with Rider 4 is bumping on the floor for 2472 ms
+age() = 14760, Rider 5 is joining the line.
+age() = 15762, Car 2 with Rider 5 is bumping on the floor for 4509 ms
+age() = 16069, Rider 3 is joining the line.
+age() = 16158, Car 1 has unloaded.
+age() = 16158, Car 1 is in line to be loaded.
+age() = 16158, Rider 1 has finished riding.
+age() = 16158, Rider 1 is wandering the park for 332 ms
+age() = 16491, Rider 1 is joining the line.
+age() = 16536, Rider 4 has finished riding.
+age() = 16536, Rider 4 is wandering the park for 2238 ms
+age() = 16536, Car 0 has unloaded.
+age() = 16536, Car 0 is in line to be loaded.
+age() = 17126, Rider 0 is joining the line.
+age() = 17159, Car 1 with Rider 3 is bumping on the floor for 89 ms
+age() = 17159, Car 0 with Rider 1 is bumping on the floor for 2828 ms
+age() = 18250, Rider 3 has finished riding.
+age() = 18250, Car 1 has unloaded.
+age() = 18250, Rider 3 is wandering the park for 7432 ms
+age() = 18250, Car 1 is in line to be loaded.
+age() = 18380, Rider 2 is joining the line.
+age() = 18775, Rider 4 is joining the line.
+age() = 19251, Car 1 with Rider 0 is bumping on the floor for 4466 ms
+age() = 20988, Rider 1 has finished riding.
+age() = 20988, Rider 1 is wandering the park for 135 ms
+age() = 20988, Car 0 has unloaded.
+age() = 20988, Car 0 is in line to be loaded.
+age() = 21125, Rider 1 is joining the line.
+age() = 21272, Rider 5 has finished riding.
+age() = 21272, Rider 5 is wandering the park for 6681 ms
+age() = 21272, Car 2 has unloaded.
+age() = 21272, Car 2 is in line to be loaded.
+age() = 21990, Car 2 with Rider 4 is bumping on the floor for 1425 ms
+age() = 21990, Car 0 with Rider 2 is bumping on the floor for 534 ms
+age() = 23525, Rider 2 has finished riding.
+age() = 23525, Car 0 has unloaded.
+age() = 23525, Rider 2 is wandering the park for 5578 ms
+age() = 23525, Car 0 is in line to be loaded.
+age() = 24416, Car 2 has unloaded.
+age() = 24416, Rider 4 has finished riding.
+age() = 24416, Rider 4 is wandering the park for 3119 ms
+age() = 24416, Car 2 is in line to be loaded.
+age() = 24526, Car 0 with Rider 1 is bumping on the floor for 3074 ms
+age() = 24717, Rider 0 has finished riding.
+age() = 24717, Car 1 has unloaded.
+age() = 24717, Car 1 is in line to be loaded.
+age() = 24717, Rider 0 is wandering the park for 9226 ms
+age() = 25683, Rider 3 is joining the line.
+age() = 26684, Car 1 with Rider 3 is bumping on the floor for 3963 ms
+age() = 27536, Rider 4 is joining the line.
+age() = 27954, Rider 5 is joining the line.
+age() = 28537, Car 2 with Rider 4 is bumping on the floor for 167 ms
+age() = 28601, Rider 1 has finished riding.
+age() = 28601, Rider 1 is wandering the park for 8849 ms
+age() = 28601, Car 0 has unloaded.
+age() = 28601, Car 0 is in line to be loaded.
+age() = 29104, Rider 2 is joining the line.
+age() = 29603, Car 0 with Rider 5 is bumping on the floor for 3265 ms
+age() = 29707, Rider 4 has finished riding.
+age() = 29707, Rider 4 is wandering the park for 3135 ms
+age() = 29707, Car 2 has unloaded.
+age() = 29707, Car 2 is in line to be loaded.
+Calling stopIts; wait 15 seconds; do mini-report
+age() = 30708, Car 2 with Rider 2 is bumping on the floor for 1351 ms
+age() = 31647, Rider 3 has finished riding.
+age() = 31647, Car 1 has unloaded.
+age() = 32843, Rider 4 is joining the line.
+age() = 33061, Car 2 has unloaded.
+age() = 33061, Rider 2 has finished riding.
+age() = 33870, Car 0 has unloaded.
+age() = 33870, Rider 5 has finished riding.
+age() = 33944, Rider 0 is joining the line.
+age() = 37451, Rider 1 is joining the line.
+Number of times a car was ridden 21.
+
+D:\Desktop\code\OperatingSystems\Program06>exit

@@ -8,13 +8,13 @@ public class Bump extends Thread{
         int totalTime = 40;
 
         // use getOpt to get the command line args
-        GetOpt go = new GetOpt(args, "ur:c:b:w:R:");
+        GetOpt go = new GetOpt(args, "Ur:c:b:w:R:");
         go.optErr = true;
         int ch = -1;
         boolean usagePrint = false;
 
         while ((ch = go.getopt()) != go.optEOF) {
-            if ((char) ch == 'u')
+            if ((char) ch == 'U')
                 usagePrint = true;
             else if ((char) ch == 'r')
                 totalRiders = go.processArg(go.optArgGet(), totalRiders);
